@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import * as sharp from 'sharp';
+import sharp from 'sharp';
 import { ImageFormat } from './image-format.enum';
 
 export interface OptimizationOptions {
@@ -12,10 +12,12 @@ export interface OptimizationOptions {
 @Injectable()
 export class ImageOptimizationService {
   async optimizeImage(
-    imageBuffer: Buffer,
+    imagePath: string,
     options: OptimizationOptions,
   ): Promise<Buffer> {
     try {
+      const imageBuffer = await sharp(imagePath).toBuffer();
+
       let pipeline = sharp(imageBuffer);
 
       // Resize if dimensions are provided
@@ -152,7 +154,7 @@ export class ImageOptimizationService {
   ): Promise<Buffer> {
     try {
       const { width, height } = await sharp(imageBuffer).metadata();
-      
+
       // Create SVG watermark
       const fontSize = options?.fontSize || Math.min(width!, height!) / 20;
       const svgWatermark = `
@@ -214,7 +216,10 @@ export class ImageOptimizationService {
 
       // Get original image metadata for aspect ratio calculations
       const metadata = await sharp(imageBuffer).metadata();
-      const aspectRatio = metadata.width && metadata.height ? metadata.width / metadata.height : 1;
+      const aspectRatio =
+        metadata.width && metadata.height
+          ? metadata.width / metadata.height
+          : 1;
 
       // Calculate mobile-optimized dimensions
       let finalWidth = width;

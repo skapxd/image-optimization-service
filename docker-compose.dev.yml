@@ -43,37 +43,30 @@ services:
           memory: 2G
           cpus: '1.0'
 
-  # Optional: Development database for testing
+  # Database and cache services for development
   postgres-dev:
-    image: postgres:15-alpine
+    image: postgres:15
     container_name: postgres-dev
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_DB: image_optimization_dev
-      POSTGRES_USER: dev_user
-      POSTGRES_PASSWORD: dev_password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
     volumes:
       - postgres_dev_data:/var/lib/postgresql/data
-    restart: unless-stopped
     networks:
-      - dev-network
-    profiles:
-      - database
+      - image-optimization-network
 
-  # Development Redis
   redis-dev:
     image: redis:7-alpine
     container_name: redis-dev
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_dev_data:/data
-    restart: unless-stopped
     networks:
-      - dev-network
-    profiles:
-      - cache
+      - image-optimization-network
 
 volumes:
   node_modules:
@@ -82,4 +75,6 @@ volumes:
 
 networks:
   dev-network:
+    driver: bridge
+  image-optimization-network:
     driver: bridge

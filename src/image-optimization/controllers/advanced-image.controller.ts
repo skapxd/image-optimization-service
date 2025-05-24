@@ -19,8 +19,8 @@ import {
   ApiResponse,
   ApiQuery,
 } from '@nestjs/swagger';
-import { ImageOptimizationService } from './image-optimization.service';
-import { ImageFormat } from './image-format.enum';
+import { ImageOptimizationService } from '../image-optimization.service';
+import { ImageFormat } from '../image-format.enum';
 
 @ApiTags('advanced-image')
 @Controller('advanced-image')
@@ -107,7 +107,13 @@ export class AdvancedImageController {
       required: ['image'],
     },
   })
-  @ApiQuery({ name: 'format', required: true, description: 'Target format', enum: ImageFormat, example: ImageFormat.WEBP })
+  @ApiQuery({
+    name: 'format',
+    required: true,
+    description: 'Target format',
+    enum: ImageFormat,
+    example: ImageFormat.WEBP,
+  })
   @ApiResponse({
     status: 200,
     description: 'Image converted successfully',
@@ -123,7 +129,10 @@ export class AdvancedImageController {
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Bad request - invalid file or format' })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - invalid file or format',
+  })
   @UseInterceptors(FileInterceptor('image'))
   async convertFormat(
     @UploadedFile() file: Express.Multer.File,
@@ -133,8 +142,12 @@ export class AdvancedImageController {
       throw new BadRequestException('No image file provided');
     }
 
-    if (!Object.values(ImageFormat).includes(format.toLowerCase() as ImageFormat)) {
-      throw new BadRequestException(`Format must be one of: ${Object.values(ImageFormat).join(', ')}`);
+    if (
+      !Object.values(ImageFormat).includes(format.toLowerCase() as ImageFormat)
+    ) {
+      throw new BadRequestException(
+        `Format must be one of: ${Object.values(ImageFormat).join(', ')}`,
+      );
     }
 
     const convertedImage = await this.imageOptimizationService.convertFormat(
@@ -169,8 +182,20 @@ export class AdvancedImageController {
       required: ['image'],
     },
   })
-  @ApiQuery({ name: 'width', required: false, description: 'Thumbnail width in pixels (optimized for high DPI mobile devices)', example: 937 })
-  @ApiQuery({ name: 'height', required: false, description: 'Thumbnail height in pixels (optional, omit to maintain aspect ratio)', example: null })
+  @ApiQuery({
+    name: 'width',
+    required: false,
+    description:
+      'Thumbnail width in pixels (optimized for high DPI mobile devices)',
+    example: 937,
+  })
+  @ApiQuery({
+    name: 'height',
+    required: false,
+    description:
+      'Thumbnail height in pixels (optional, omit to maintain aspect ratio)',
+    example: null,
+  })
   @ApiResponse({
     status: 200,
     description: 'Thumbnail created successfully',
@@ -270,11 +295,17 @@ export class AdvancedImageController {
         originalSize: { type: 'number' },
         watermarkedSize: { type: 'number' },
         watermarkText: { type: 'string' },
-        data: { type: 'string', description: 'Base64 encoded watermarked image data' },
+        data: {
+          type: 'string',
+          description: 'Base64 encoded watermarked image data',
+        },
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Bad request - missing file or text' })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - missing file or text',
+  })
   @UseInterceptors(FileInterceptor('image'))
   async addWatermark(
     @UploadedFile() file: Express.Multer.File,
@@ -339,16 +370,7 @@ export class AdvancedImageController {
   })
   getSupportedFormats() {
     return {
-      inputFormats: [
-        'jpeg',
-        'jpg',
-        'png',
-        'gif',
-        'webp',
-        'svg',
-        'tiff',
-        'bmp',
-      ],
+      inputFormats: ['jpeg', 'jpg', 'png', 'gif', 'webp', 'svg', 'tiff', 'bmp'],
       outputFormats: ['jpeg', 'png', 'webp'],
       description: 'List of supported input and output image formats',
     };
