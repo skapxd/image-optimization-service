@@ -194,4 +194,88 @@ export class ImageOptimizationController {
       results,
     };
   }
+
+  @Post('blur-placeholder')
+  @ApiOperation({ summary: 'Generate a mobile-optimized blurred placeholder for an image to prevent layout shift' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Image file to create blur placeholder from',
+    schema: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: 'Image file to create blur placeholder from (JPEG, PNG, WebP, TIFF, GIF)',
+        },
+      },
+      required: ['image'],
+    },
+  })
+  @ApiQuery({ name: 'width', required: false, description: 'Placeholder width in pixels (default: 40, optimized for mobile)', example: 40 })
+  @ApiQuery({ name: 'height', required: false, description: 'Placeholder height in pixels (leave empty to maintain aspect ratio)', example: null })
+  @ApiQuery({ name: 'blurRadius', required: false, description: 'Blur intensity (1-50, default: 15 for better mobile appearance)', example: 15 })
+  @ApiQuery({ name: 'quality', required: false, description: 'JPEG quality for placeholder (1-50, default: 15 for mobile optimization)', example: 15 })
+  @ApiQuery({ name: 'mobileOptimized', required: false, description: 'Enable mobile-specific optimizations (default: true)', example: true })
+  @ApiResponse({
+    status: 200,
+    description: 'Blur placeholder generated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+        originalSize: { type: 'number' },
+        placeholderSize: { type: 'number' },
+        compressionRatio: { type: 'number' },
+        data: { type: 'string', description: 'Base64 encoded blur placeholder' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - invalid file or parameters' })
+  @UseInterceptors(FileInterceptor('image'))
+  async createBlurPlaceholder(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('width', new DefaultValuePipe(40), ParseIntPipe) width: number,
+    @Query('height', new DefaultValuePipe(null)) height: number | null,
+    @Query('blurRadius', new DefaultValuePipe(15), ParseIntPipe) blurRadius: number,
+    @Query('quality', new DefaultValuePipe(15), ParseIntPipe) quality: number,
+    @Query('mobileOptimized', new DefaultValuePipe(true)) mobileOptimized: boolean,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No image file provided');
+    }
+
+    if (blurRadius < 1 || blurRadius > 50) {
+      throw new BadRequestException('Blur radius must be between 1 and 50');
+    }
+
+    if (quality < 1 || quality > 50) {
+      throw new BadRequestException('Quality must be between 1 and 50 for blur placeholders');
+    }
+
+    if (width < 10 || width > 256) {
+      throw new BadRequestException('Width must be between 10 and 256 pixels for blur placeholders');
+    }
+
+    const blurPlaceholder = await this.imageOptimizationService.createBlurPlaceholder(
+      file.buffer,
+      {
+        width,
+        ...(height !== null && { height }),
+        blurRadius,
+        quality,
+        mobileOptimized,
+      },
+    );
+
+    return {
+      message: 'Blur placeholder generated successfully',
+      originalSize: file.size,
+      placeholderSize: blurPlaceholder.length,
+      compressionRatio: Math.round(
+        ((file.size - blurPlaceholder.length) / file.size) * 100,
+      ),
+      data: blurPlaceholder.toString('base64'),
+    };
+  }
 }

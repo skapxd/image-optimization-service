@@ -187,4 +187,68 @@ export class ImageOptimizationService {
       );
     }
   }
+
+  /**
+   * Create a lightweight blurred placeholder for an image
+   * Optimized for mobile devices and responsive design
+   * Useful for preventing layout shift while the main image loads
+   */
+  async createBlurPlaceholder(
+    imageBuffer: Buffer,
+    options: {
+      width?: number;
+      height?: number;
+      blurRadius?: number;
+      quality?: number;
+      mobileOptimized?: boolean;
+    } = {},
+  ): Promise<Buffer> {
+    try {
+      const {
+        width = 40,
+        height,
+        blurRadius = 15,
+        quality = 15,
+        mobileOptimized = true,
+      } = options;
+
+      // Get original image metadata for aspect ratio calculations
+      const metadata = await sharp(imageBuffer).metadata();
+      const aspectRatio = metadata.width && metadata.height ? metadata.width / metadata.height : 1;
+
+      // Calculate mobile-optimized dimensions
+      let finalWidth = width;
+      let finalHeight = height;
+
+      if (mobileOptimized && !height) {
+        // For mobile, use smaller dimensions but maintain aspect ratio
+        finalWidth = Math.max(20, Math.min(width, 40)); // Cap at 40px for mobile
+        finalHeight = Math.round(finalWidth / aspectRatio);
+      } else if (!height) {
+        finalHeight = Math.round(finalWidth / aspectRatio);
+      }
+
+      const sharpInstance = sharp(imageBuffer)
+        .resize(finalWidth, finalHeight, {
+          fit: 'cover',
+          withoutEnlargement: true,
+          background: { r: 128, g: 128, b: 128, alpha: 1 }, // Neutral gray background
+        })
+        .blur(blurRadius)
+        .jpeg({
+          quality: mobileOptimized ? Math.max(10, quality - 5) : quality,
+          progressive: mobileOptimized === true,
+          mozjpeg: true,
+          chromaSubsampling: '4:2:0', // Better compression for mobile
+          trellisQuantisation: true,
+          optimiseScans: mobileOptimized === true,
+        });
+
+      return await sharpInstance.toBuffer();
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to create blur placeholder: ${error.message}`,
+      );
+    }
+  }
 }
