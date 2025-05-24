@@ -156,7 +156,7 @@ export class ImageOptimizationController {
   @ApiResponse({ status: 400, description: 'Bad request - invalid files or parameters' })
   @UseInterceptors(FilesInterceptor('images'))
   async batchOptimizeImages(
-    @UploadedFile() files: Express.Multer.File[],
+    @UploadedFiles() files: Express.Multer.File[],
     @Query('width', new DefaultValuePipe(937), ParseIntPipe) width: number,
     @Query('height', new DefaultValuePipe(null)) height: number | null,
     @Query('quality', new DefaultValuePipe(80), ParseIntPipe) quality: number,
