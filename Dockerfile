@@ -27,8 +27,8 @@ FROM node:18-alpine AS production
 RUN apk add --no-cache vips
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nestjs -u 1001
+RUN addgroup -g 10001 -S nodejs
+RUN adduser -S nestjs -u 10001
 
 # Set working directory
 WORKDIR /app
