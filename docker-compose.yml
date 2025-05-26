@@ -9,7 +9,7 @@ services:
       target: production
     container_name: image-optimization-service
     ports:
-      - "3000:3000"
+      - "3003:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
