@@ -97,7 +97,7 @@ export class ImageOptimizationController {
     required: false,
     description:
       'Target width in pixels (optimized for high DPI mobile devices)',
-    example: 937,
+    example: 800,
   })
   @ApiQuery({
     name: 'height',
@@ -156,7 +156,7 @@ export class ImageOptimizationController {
   optimizeImage(
     @UploadedFile() file: Express.Multer.File,
     @Body('callbacks') callbacks: OptimizationCallback[] = [],
-    @Query('width', new DefaultValuePipe(937), ParseIntPipe) width: number,
+    @Query('width', new DefaultValuePipe(800), ParseIntPipe) width: number,
     @Query('height', new DefaultValuePipe(null)) height: number | null,
     @Query('quality', new DefaultValuePipe(80), ParseIntPipe) quality: number,
     @Query('format', new DefaultValuePipe('jpeg')) format: string,
@@ -333,7 +333,7 @@ export class ImageOptimizationController {
     required: false,
     description:
       'Target width in pixels (optimized for high DPI mobile devices)',
-    example: 937,
+    example: 800,
   })
   @ApiQuery({
     name: 'height',
@@ -403,7 +403,7 @@ export class ImageOptimizationController {
   batchOptimizeImages(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('callbacks') callbacks: OptimizationCallback[] = [],
-    @Query('width', new DefaultValuePipe(937), ParseIntPipe) width: number,
+    @Query('width', new DefaultValuePipe(800), ParseIntPipe) width: number,
     @Query('height', new DefaultValuePipe(null)) height: number | null,
     @Query('quality', new DefaultValuePipe(80), ParseIntPipe) quality: number,
     @Query('format', new DefaultValuePipe('jpeg')) format: string,

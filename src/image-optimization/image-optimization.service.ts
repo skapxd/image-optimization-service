@@ -121,7 +121,7 @@ export class ImageOptimizationService {
 
   async createThumbnail(
     imageBuffer: Buffer,
-    width: number = 937,
+    width: number = 800,
     height?: number,
   ): Promise<Buffer> {
     try {

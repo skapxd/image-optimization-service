@@ -187,7 +187,7 @@ export class AdvancedImageController {
     required: false,
     description:
       'Thumbnail width in pixels (optimized for high DPI mobile devices)',
-    example: 937,
+    example: 800,
   })
   @ApiQuery({
     name: 'height',
@@ -220,7 +220,7 @@ export class AdvancedImageController {
   @UseInterceptors(FileInterceptor('image'))
   async createThumbnail(
     @UploadedFile() file: Express.Multer.File,
-    @Query('width', new DefaultValuePipe(937), ParseIntPipe) width: number,
+    @Query('width', new DefaultValuePipe(800), ParseIntPipe) width: number,
     @Query('height', new DefaultValuePipe(null)) height?: number,
   ) {
     if (!file) {

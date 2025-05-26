@@ -6,7 +6,7 @@ import { ImageFormat } from '../image-format.enum';
 export class ImageOptimizationRequestDto {
   @ApiPropertyOptional({
     description: 'Target width in pixels',
-    example: 937,
+    example: 800,
     minimum: 1,
     maximum: 10000,
   })
