@@ -44,20 +44,6 @@ services:
           cpus: '1.0'
 
   # Database and cache services for development
-  postgres-dev:
-    image: postgres:15
-    container_name: postgres-dev
-    environment:
-      POSTGRES_DB: image_optimization_dev
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_dev_data:/var/lib/postgresql/data
-    networks:
-      - image-optimization-network
-
   redis-dev:
     image: redis:7-alpine
     container_name: redis-dev
@@ -70,7 +56,6 @@ services:
 
 volumes:
   node_modules:
-  postgres_dev_data:
   redis_dev_data:
 
 networks:

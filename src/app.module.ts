@@ -12,13 +12,6 @@ import Joi from 'joi';
       isGlobal: true,
       envFilePath: '.env',
       validationSchema: Joi.object({
-        // // Database Configuration
-        // POSTGRES_HOST: Joi.string().default('postgres-dev'),
-        // POSTGRES_PORT: Joi.number().default(5432),
-        // POSTGRES_USER: Joi.string().required(),
-        // POSTGRES_PASSWORD: Joi.string().required(),
-        // POSTGRES_DB: Joi.string().required(),
-
         // Redis Configuration
         REDIS_HOST: Joi.string().default('redis-dev'),
         REDIS_PORT: Joi.number().default(6379),
