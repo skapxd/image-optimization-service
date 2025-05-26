@@ -54,4 +54,13 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
-/uploads
+
+# Uploads directory
+uploads/*
+!uploads/.gitkeep
+!uploads/original/
+uploads/original/*
+!uploads/original/.gitkeep
+!uploads/optimized/
+uploads/optimized/*
+!uploads/optimized/.gitkeep
