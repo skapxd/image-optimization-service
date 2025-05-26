@@ -17,6 +17,8 @@ services:
       - SHARP_CACHE_MEMORY=2048
       - SHARP_CONCURRENCY=4
     volumes:
+      # Mount uploads directory for persistent file storage
+      # - ./uploads:/app/uploads
       # Optional: Mount logs directory
       - ./logs:/app/logs
     restart: unless-stopped

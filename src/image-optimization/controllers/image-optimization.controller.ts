@@ -256,6 +256,8 @@ export class ImageOptimizationController {
         try {
           const { url, headers = {}, method = 'POST' } = callback;
 
+          if (!URL.canParse(url)) return;
+
           const response = await fetch(url, {
             method,
             headers: {
