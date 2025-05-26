@@ -8,6 +8,7 @@ import {
   BadRequestException,
   ParseIntPipe,
   DefaultValuePipe,
+  Body,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import {
@@ -20,6 +21,15 @@ import {
 } from '@nestjs/swagger';
 import { ImageOptimizationService } from '../image-optimization.service';
 import { ImageFormat } from '../image-format.enum';
+import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+
+// Definir la interfaz para los callbacks
+interface OptimizationCallback {
+  url: string;
+  headers?: Record<string, string>;
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH';
+}
 
 @ApiTags('image-optimization')
 @Controller('image-optimization')
@@ -42,6 +52,30 @@ export class ImageOptimizationController {
           type: 'string',
           format: 'binary',
           description: 'Image file to optimize (JPEG, PNG, WebP, TIFF, GIF)',
+        },
+        callbacks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              url: {
+                type: 'string',
+                description: 'URL to notify when optimization is complete',
+              },
+              headers: {
+                type: 'object',
+                description: 'Optional headers for the callback request',
+              },
+              method: {
+                type: 'string',
+                enum: ['GET', 'POST', 'PUT', 'PATCH'],
+                default: 'POST',
+                description: 'HTTP method for the callback request',
+              },
+            },
+            required: ['url'],
+          },
+          description: 'Callbacks to notify when optimization is complete',
         },
       },
       required: ['image'],
@@ -84,7 +118,14 @@ export class ImageOptimizationController {
         originalSize: { type: 'number' },
         optimizedSize: { type: 'number' },
         compressionRatio: { type: 'number' },
-        data: { type: 'string', description: 'Base64 encoded optimized image' },
+        data: {
+          type: 'string',
+          description: 'Filename of the optimized image',
+        },
+        callbacksScheduled: {
+          type: 'number',
+          description: 'Number of callbacks scheduled',
+        },
       },
     },
   })
@@ -93,8 +134,9 @@ export class ImageOptimizationController {
     description: 'Bad request - invalid file or parameters',
   })
   @UseInterceptors(FileInterceptor('image'))
-  async optimizeImage(
+  optimizeImage(
     @UploadedFile() file: Express.Multer.File,
+    @Body('callbacks') callbacks: OptimizationCallback[] = [],
     @Query('width', new DefaultValuePipe(937), ParseIntPipe) width: number,
     @Query('height', new DefaultValuePipe(null)) height: number | null,
     @Query('quality', new DefaultValuePipe(80), ParseIntPipe) quality: number,
@@ -116,25 +158,76 @@ export class ImageOptimizationController {
       );
     }
 
-    const optimizedImage = await this.imageOptimizationService.optimizeImage(
-      file.path,
-      {
+    const newFileName = `${randomUUID()}_${Date.now()}.${format}`;
+
+    this.imageOptimizationService
+      .optimizeImage(file.path, {
         width,
         ...(height !== null && { height }),
         quality,
         format: format.toLowerCase() as ImageFormat,
-      },
-    );
+      })
+      .then((optimizedImage) => {
+        writeFile(`./uploads/optimized/${newFileName}`, optimizedImage);
+
+        // Notificar a todos los callbacks
+        if (callbacks && callbacks.length > 0) {
+          this.notifyCallbacks(JSON.parse(callbacks as any), {
+            fileName: newFileName,
+            originalSize: file.size,
+            optimizedSize: optimizedImage.length,
+            compressionRatio: Math.round(
+              ((file.size - optimizedImage.length) / file.size) * 100,
+            ),
+          });
+        }
+      })
+      .catch((error) => {
+        console.error('Error optimizing image:', error);
+      });
 
     return {
       message: 'Image optimized successfully',
       originalSize: file.size,
-      optimizedSize: optimizedImage.length,
-      compressionRatio: Math.round(
-        ((file.size - optimizedImage.length) / file.size) * 100,
-      ),
-      data: optimizedImage.toString('base64'),
+      data: newFileName,
+      callbacksScheduled: callbacks?.length || 0,
     };
+  }
+
+  // Método privado para notificar a los callbacks
+  private async notifyCallbacks(callbacks: OptimizationCallback[], data: any) {
+    try {
+      // Procesar cada callback en paralelo
+      const callbackPromises = callbacks?.map(async (callback) => {
+        try {
+          const { url, headers = {}, method = 'POST' } = callback;
+
+          const response = await fetch(url, {
+            method,
+            headers: {
+              'Content-Type': 'application/json',
+              ...headers,
+            },
+            body: method !== 'GET' ? JSON.stringify(data) : undefined,
+          });
+
+          if (!response.ok) {
+            console.error(
+              `Callback to ${url} failed with status ${response.status}`,
+            );
+          }
+        } catch (error) {
+          console.error(`Error notifying callback ${callback.url}:`, error);
+        }
+      });
+
+      await Promise.allSettled(callbackPromises);
+    } catch (error) {
+      console.error(
+        'Error importing node-fetch or processing callbacks:',
+        error,
+      );
+    }
   }
 
   @Post('batch-optimize')
