@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import sharp from 'sharp';
 import { ImageFormat } from './image-format.enum';
+import { ImageUploadService } from '../image-upload/image-upload.service';
 
 export interface OptimizationOptions {
   width?: number;
@@ -11,6 +12,8 @@ export interface OptimizationOptions {
 
 @Injectable()
 export class ImageOptimizationService {
+  constructor(private readonly imageUploadService: ImageUploadService) {}
+
   async optimizeImage(
     imagePath: string,
     options: OptimizationOptions,

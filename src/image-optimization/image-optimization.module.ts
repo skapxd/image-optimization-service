@@ -1,17 +1,18 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bull';
-import { MulterModule } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { ImageOptimizationService } from './image-optimization.service';
 import { ImageOptimizationController } from './controllers/image-optimization.controller';
+import { ImageOptimizationSseController } from './controllers/image-optimization-sse.controller';
+import { BullModule } from '@nestjs/bull';
+import { ImageOptimizationProcessor } from './processors/image-optimization.processor';
+import { JobService } from './services/job.service';
+import { QueueService } from './services/queue.service';
 import { AdvancedImageController } from './controllers/advanced-image.controller';
 import { QueueController } from './controllers/queue.controller';
-import { ImageOptimizationSseController } from './controllers/image-optimization-sse.controller';
-import { ImageOptimizationService } from './image-optimization.service';
-import { QueueService } from './services/queue.service';
-import { JobService } from './services/job.service';
-import { ImageOptimizationProcessor } from './processors/image-optimization.processor';
-import { randomUUID } from 'crypto';
+import { ImageUploadModule } from 'src/image-upload/image-upload.module';
+import { diskStorage } from 'multer';
+import { randomUUID } from 'node:crypto';
+import { extname } from 'node:path';
+import { MulterModule } from '@nestjs/platform-express';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { randomUUID } from 'crypto';
         fileSize: 50 * 1024 * 1024, // 50MB
       },
     }),
+    ImageUploadModule,
   ],
   controllers: [
     ImageOptimizationController,
@@ -44,7 +46,9 @@ import { randomUUID } from 'crypto';
     JobService,
     ImageOptimizationProcessor,
     ImageOptimizationSseController,
+    JobService,
+    QueueService,
   ],
-  exports: [ImageOptimizationService, QueueService, JobService],
+  exports: [ImageOptimizationService, ImageOptimizationSseController],
 })
 export class ImageOptimizationModule {}
