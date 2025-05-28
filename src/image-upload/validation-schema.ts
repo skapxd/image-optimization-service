@@ -5,6 +5,7 @@ export const validationSchema = z.object({
   S3_ACCESS_KEY_ID: z.string(),
   S3_SECRET_ACCESSKEY: z.string(),
   S3_ENDPOINT: z.string(),
+  S3_CUSTOM_DOMAIN: z.string(),
 });
 
 export type ConfigSchema = z.infer<typeof validationSchema>;

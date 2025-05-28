@@ -6,10 +6,12 @@ import { ConfigSchema } from './validation-schema';
 @Injectable()
 export class ImageUploadService {
   private s3: S3;
+  private readonly customDomain: string;
   private readonly bucketName: string;
 
   constructor(private readonly configService: ConfigService<ConfigSchema>) {
     this.bucketName = this.configService.get('S3_BUCKET_NAME')!;
+    this.customDomain = this.configService.get('S3_CUSTOM_DOMAIN')!;
 
     this.s3 = new S3({
       accessKeyId: this.configService.get('S3_ACCESS_KEY_ID'),
@@ -25,7 +27,7 @@ export class ImageUploadService {
     fileName: string,
     mimetype: string,
   ): Promise<string> {
-    const uploadResult = await this.s3
+    await this.s3
       .upload({
         Bucket: this.bucketName,
         Body: fileBuffer,
@@ -34,7 +36,8 @@ export class ImageUploadService {
         ACL: 'public-read',
       })
       .promise();
-    return uploadResult.Location;
+
+    return new URL(fileName, this.customDomain).toString();
   }
 
   async deleteFile(fileName: string): Promise<void> {
