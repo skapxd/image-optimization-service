@@ -2,22 +2,24 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import sharp from 'sharp';
 import { ImageFormat } from './image-format.enum';
 import { ImageUploadService } from '../image-upload/image-upload.service';
+import { ImageOptimizationSseController } from './controllers/image-optimization-sse.controller';
 
 export interface OptimizationOptions {
   width?: number;
   height?: number;
   quality?: number;
   format?: ImageFormat;
+  newFilePath: string;
 }
 
 @Injectable()
 export class ImageOptimizationService {
-  constructor(private readonly imageUploadService: ImageUploadService) {}
+  constructor(
+    private readonly imageUploadService: ImageUploadService,
+    private readonly sseController: ImageOptimizationSseController,
+  ) {}
 
-  async optimizeImage(
-    imagePath: string,
-    options: OptimizationOptions,
-  ): Promise<Buffer> {
+  async optimizeImage(imagePath: string, options: OptimizationOptions) {
     try {
       const imageBuffer = await sharp(imagePath).toBuffer();
 
@@ -58,7 +60,10 @@ export class ImageOptimizationService {
           pipeline = pipeline.jpeg({ quality: options.quality || 80 });
       }
 
-      return await pipeline.toBuffer();
+      const buffer = await pipeline.toBuffer();
+      const mimetype = `image/${options.format || 'jpeg'}`;
+
+      this.imageUploadService.uploadFile(buffer, options.newFilePath, mimetype);
     } catch (error) {
       throw new BadRequestException(
         `Failed to optimize image: ${error.message}`,

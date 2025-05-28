@@ -32,13 +32,10 @@ import { ImageFormat } from '../image-format.enum';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { ImageOptimizationSseController } from './image-optimization-sse.controller';
-
-// Definir la interfaz para los callbacks
-interface OptimizationCallback {
-  url: string;
-  headers?: Record<string, string>;
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH';
-}
+import { ConfigService } from '@nestjs/config';
+import { ConfigSchema } from 'src/image-upload/validation-schema';
+import { OptimizationCallback } from 'src/notify-callbacks/notify-callbacks.service';
+import { TimeToLiveDBService } from 'src/time-to-live-db/time-to-live-db.service';
 
 @ApiTags('image-optimization')
 @Controller('image-optimization')
@@ -47,6 +44,8 @@ export class ImageOptimizationController {
     private readonly imageOptimizationService: ImageOptimizationService,
     @Inject(ImageOptimizationSseController)
     private readonly sseController: ImageOptimizationSseController,
+    private readonly configService: ConfigService<ConfigSchema>,
+    private readonly ttlDB: TimeToLiveDBService,
   ) {}
 
   @Post('optimize')
@@ -177,113 +176,32 @@ export class ImageOptimizationController {
       );
     }
 
-    const newFileName = `${randomUUID()}_${Date.now()}.${format}`;
+    const newFilePath = `optimized/${Date.now()}_${randomUUID()}.${format}`;
     const optimizationId = randomUUID();
-
-    // Enviar evento de inicio de optimización
-    this.sseController.sendOptimizationEvent({
-      id: optimizationId,
-      type: 'progress',
-      data: {
-        progress: 0,
-        message: 'Starting optimization',
-        fileName: newFileName,
-        originalSize: file.size,
-      },
-    });
 
     this.imageOptimizationService
       .optimizeImage(file.path, {
         width,
         ...(height !== null && { height }),
+        newFilePath,
         quality,
         format: format.toLowerCase() as ImageFormat,
       })
-      .then((optimizedImage) => {
-        writeFile(`./uploads/optimized/${newFileName}`, optimizedImage);
-
-        // Datos de optimización
-        const optimizationData = {
-          fileName: newFileName,
-          originalSize: file.size,
-          optimizedSize: optimizedImage.length,
-          compressionRatio: Math.round(
-            ((file.size - optimizedImage.length) / file.size) * 100,
-          ),
-        };
-
-        // Enviar evento de finalización de optimización
-        this.sseController.sendOptimizationEvent({
-          id: optimizationId,
-          type: 'complete',
-          data: optimizationData,
-        });
-
-        // Notificar a todos los callbacks
-        if (callbacks && callbacks.length > 0) {
-          this.notifyCallbacks(JSON.parse(callbacks as any), optimizationData);
-        }
-      })
       .catch((error) => {
         console.error('Error optimizing image:', error);
-
-        // Enviar evento de error
-        this.sseController.sendOptimizationEvent({
-          id: optimizationId,
-          type: 'error',
-          data: {
-            message: 'Error optimizing image',
-            error: error.message,
-          },
-        });
       });
 
     return {
       message: 'Image optimization started',
       originalSize: file.size,
-      data: newFileName,
-      downloadUrl: `/image-optimization/download/${newFileName}`,
+      data: newFilePath,
+      downloadUrl: new URL(
+        newFilePath,
+        this.configService.get('S3_CUSTOM_DOMAIN'),
+      ),
       callbacksScheduled: callbacks?.length || 0,
       optimizationId, // Devolver el ID para que el cliente pueda suscribirse a los eventos
     };
-  }
-
-  // Método privado para notificar a los callbacks
-  private async notifyCallbacks(callbacks: OptimizationCallback[], data: any) {
-    try {
-      // Procesar cada callback en paralelo
-      const callbackPromises = callbacks?.map(async (callback) => {
-        try {
-          const { url, headers = {}, method = 'POST' } = callback;
-
-          if (!URL.canParse(url)) return;
-
-          const response = await fetch(url, {
-            method,
-            headers: {
-              'Content-Type': 'application/json',
-              ...headers,
-            },
-            body: method !== 'GET' ? JSON.stringify(data) : undefined,
-          });
-
-          if (!response.ok) {
-            console.error(
-              `Callback to ${url} failed with status ${response.status}`,
-            );
-          }
-        } catch (error) {
-          console.error(`Error notifying callback ${callback.url}:`, error);
-        }
-      });
-
-      await Promise.allSettled(callbackPromises);
-    } catch (error) {
-      console.error(
-        'Error importing node-fetch or processing callbacks:',
-        error,
-      );
-    }
   }
 
   @Post('batch-optimize')
@@ -410,163 +328,144 @@ export class ImageOptimizationController {
     @Query('quality', new DefaultValuePipe(80), ParseIntPipe) quality: number,
     @Query('format', new DefaultValuePipe('jpeg')) format: string,
   ) {
-    if (!files || files.length === 0) {
-      throw new BadRequestException('No image files provided');
-    }
-
-    if (quality < 1 || quality > 100) {
-      throw new BadRequestException('Quality must be between 1 and 100');
-    }
-
-    if (
-      !Object.values(ImageFormat).includes(format.toLowerCase() as ImageFormat)
-    ) {
-      throw new BadRequestException(
-        `Format must be one of: ${Object.values(ImageFormat).join(', ')}`,
-      );
-    }
-
-    const optimizationId = randomUUID();
-
-    // Generar nombres de archivo únicos para cada imagen antes del procesamiento
-    const fileNames = files.map(
-      (file, index) => `${randomUUID()}_${Date.now()}_${index}.${format}`,
-    );
-
-    // Definir el tipo para los resultados
-    const results: Array<{
-      originalName: string;
-      originalSize: number;
-      optimizedSize?: number;
-      compressionRatio?: number;
-      fileName?: string;
-      error?: string;
-    }> = [];
-
-    // Enviar evento de inicio de optimización por lotes
-    this.sseController.sendOptimizationEvent({
-      id: optimizationId,
-      type: 'progress',
-      data: {
-        progress: 0,
-        message: 'Starting batch optimization',
-        totalFiles: files.length,
-      },
-    });
-
-    // Procesar cada archivo
-    const processPromises = files.map(async (file, index) => {
-      try {
-        const newFileName = fileNames[index];
-
-        // Enviar evento de progreso para este archivo
-        this.sseController.sendOptimizationEvent({
-          id: optimizationId,
-          type: 'progress',
-          data: {
-            progress: Math.round((index / files.length) * 100),
-            message: `Optimizing file ${index + 1} of ${files.length}`,
-            fileName: newFileName,
-            originalName: file.originalname,
-            originalSize: file.size,
-          },
-        });
-
-        const optimizedImage =
-          await this.imageOptimizationService.optimizeImage(file.path, {
-            width,
-            ...(height !== null && { height }),
-            quality,
-            format: format.toLowerCase() as ImageFormat,
-          });
-
-        await writeFile(`./uploads/optimized/${newFileName}`, optimizedImage);
-
-        const fileResult = {
-          originalName: file.originalname,
-          originalSize: file.size,
-          optimizedSize: optimizedImage.length,
-          compressionRatio: Math.round(
-            ((file.size - optimizedImage.length) / file.size) * 100,
-          ),
-          fileName: newFileName,
-        };
-
-        results.push(fileResult);
-        return fileResult;
-      } catch (error) {
-        console.error(`Error optimizing image ${file.originalname}:`, error);
-
-        // Enviar evento de error para este archivo específico
-        this.sseController.sendOptimizationEvent({
-          id: optimizationId,
-          type: 'progress',
-          data: {
-            progress: Math.round((index / files.length) * 100),
-            message: `Error optimizing file ${index + 1} of ${files.length}`,
-            fileName: file.originalname,
-            error: error.message,
-          },
-        });
-
-        return {
-          originalName: file.originalname,
-          originalSize: file.size,
-          error: error.message,
-        };
-      }
-    });
-
-    // Iniciar el procesamiento en segundo plano
-    Promise.all(processPromises)
-      .then((processedResults) => {
-        // Datos de optimización por lotes
-        const batchData = {
-          count: processedResults.length,
-          results: processedResults,
-        };
-
-        // Enviar evento de finalización de optimización por lotes
-        this.sseController.sendOptimizationEvent({
-          id: optimizationId,
-          type: 'complete',
-          data: batchData,
-        });
-
-        // Notificar a todos los callbacks
-        if (callbacks && callbacks.length > 0) {
-          this.notifyCallbacks(JSON.parse(callbacks as any), batchData);
-        }
-      })
-      .catch((error) => {
-        console.error('Error in batch optimization:', error);
-
-        // Enviar evento de error general
-        this.sseController.sendOptimizationEvent({
-          id: optimizationId,
-          type: 'error',
-          data: {
-            message: 'Error in batch optimization',
-            error: error.message,
-          },
-        });
-      });
-
-    return {
-      message: 'Batch image optimization started',
-      count: files.length,
-      callbacksScheduled: callbacks?.length || 0,
-      optimizationId, // Devolver el ID para que el cliente pueda suscribirse a los eventos
-      results: files.map((file, index) => {
-        return {
-          originalName: file.originalname,
-          originalSize: file.size,
-          data: `Processing...`, // No devolvemos los datos de la imagen, ya que se procesarán de forma asíncrona
-          expectedFilename: fileNames[index],
-          downloadUrl: `/image-optimization/download/${fileNames[index]}`,
-        };
-      }),
-    };
+    //   if (!files || files.length === 0) {
+    //     throw new BadRequestException('No image files provided');
+    //   }
+    //   if (quality < 1 || quality > 100) {
+    //     throw new BadRequestException('Quality must be between 1 and 100');
+    //   }
+    //   if (
+    //     !Object.values(ImageFormat).includes(format.toLowerCase() as ImageFormat)
+    //   ) {
+    //     throw new BadRequestException(
+    //       `Format must be one of: ${Object.values(ImageFormat).join(', ')}`,
+    //     );
+    //   }
+    //   const optimizationId = randomUUID();
+    //   // Generar nombres de archivo únicos para cada imagen antes del procesamiento
+    //   const fileNames = files.map(
+    //     (file, index) => `${randomUUID()}_${Date.now()}_${index}.${format}`,
+    //   );
+    //   // Definir el tipo para los resultados
+    //   const results: Array<{
+    //     originalName: string;
+    //     originalSize: number;
+    //     optimizedSize?: number;
+    //     compressionRatio?: number;
+    //     fileName?: string;
+    //     error?: string;
+    //   }> = [];
+    //   // Enviar evento de inicio de optimización por lotes
+    //   this.sseController.sendOptimizationEvent({
+    //     id: optimizationId,
+    //     type: 'progress',
+    //     data: {
+    //       progress: 0,
+    //       message: 'Starting batch optimization',
+    //       totalFiles: files.length,
+    //     },
+    //   });
+    //   // Procesar cada archivo
+    //   const processPromises = files.map(async (file, index) => {
+    //     try {
+    //       const newFileName = fileNames[index];
+    //       // Enviar evento de progreso para este archivo
+    //       this.sseController.sendOptimizationEvent({
+    //         id: optimizationId,
+    //         type: 'progress',
+    //         data: {
+    //           progress: Math.round((index / files.length) * 100),
+    //           message: `Optimizing file ${index + 1} of ${files.length}`,
+    //           fileName: newFileName,
+    //           originalName: file.originalname,
+    //           originalSize: file.size,
+    //         },
+    //       });
+    //       const optimizedImage =
+    //         await this.imageOptimizationService.optimizeImage(file.path, {
+    //           width,
+    //           ...(height !== null && { height }),
+    //           quality,
+    //           format: format.toLowerCase() as ImageFormat,
+    //         });
+    //       await writeFile(`./uploads/optimized/${newFileName}`, optimizedImage);
+    //       const fileResult = {
+    //         originalName: file.originalname,
+    //         originalSize: file.size,
+    //         optimizedSize: optimizedImage.length,
+    //         compressionRatio: Math.round(
+    //           ((file.size - optimizedImage.length) / file.size) * 100,
+    //         ),
+    //         fileName: newFileName,
+    //       };
+    //       results.push(fileResult);
+    //       return fileResult;
+    //     } catch (error) {
+    //       console.error(`Error optimizing image ${file.originalname}:`, error);
+    //       // Enviar evento de error para este archivo específico
+    //       this.sseController.sendOptimizationEvent({
+    //         id: optimizationId,
+    //         type: 'progress',
+    //         data: {
+    //           progress: Math.round((index / files.length) * 100),
+    //           message: `Error optimizing file ${index + 1} of ${files.length}`,
+    //           fileName: file.originalname,
+    //           error: error.message,
+    //         },
+    //       });
+    //       return {
+    //         originalName: file.originalname,
+    //         originalSize: file.size,
+    //         error: error.message,
+    //       };
+    //     }
+    //   });
+    //   // Iniciar el procesamiento en segundo plano
+    //   Promise.all(processPromises)
+    //     .then((processedResults) => {
+    //       // Datos de optimización por lotes
+    //       const batchData = {
+    //         count: processedResults.length,
+    //         results: processedResults,
+    //       };
+    //       // Enviar evento de finalización de optimización por lotes
+    //       this.sseController.sendOptimizationEvent({
+    //         id: optimizationId,
+    //         type: 'complete',
+    //         data: batchData,
+    //       });
+    //       // Notificar a todos los callbacks
+    //       if (callbacks && callbacks.length > 0) {
+    //         this.notifyCallbacks(JSON.parse(callbacks as any), batchData);
+    //       }
+    //     })
+    //     .catch((error) => {
+    //       console.error('Error in batch optimization:', error);
+    //       // Enviar evento de error general
+    //       this.sseController.sendOptimizationEvent({
+    //         id: optimizationId,
+    //         type: 'error',
+    //         data: {
+    //           message: 'Error in batch optimization',
+    //           error: error.message,
+    //         },
+    //       });
+    //     });
+    //   return {
+    //     message: 'Batch image optimization started',
+    //     count: files.length,
+    //     callbacksScheduled: callbacks?.length || 0,
+    //     optimizationId, // Devolver el ID para que el cliente pueda suscribirse a los eventos
+    //     results: files.map((file, index) => {
+    //       return {
+    //         originalName: file.originalname,
+    //         originalSize: file.size,
+    //         data: `Processing...`, // No devolvemos los datos de la imagen, ya que se procesarán de forma asíncrona
+    //         expectedFilename: fileNames[index],
+    //         downloadUrl: `/image-optimization/download/${fileNames[index]}`,
+    //       };
+    //     }),
+    //   };
   }
 
   @Post('blur-placeholder')

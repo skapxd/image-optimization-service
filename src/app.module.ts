@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ImageOptimizationModule } from './image-optimization/image-optimization.module';
+import { TimeToLiveDBModule } from './time-to-live-db/time-to-live-db.module';
 import Joi from 'joi';
 
 @Module({
@@ -67,6 +68,7 @@ import Joi from 'joi';
       ],
     }),
     ImageOptimizationModule,
+    TimeToLiveDBModule,
   ],
 })
 export class AppModule {}

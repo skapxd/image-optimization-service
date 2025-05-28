@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { validationSchema } from './validation-schema';
+import { validate } from './validation-schema';
 import { ImageUploadService } from './image-upload.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       envFilePath: '.env',
-      validationSchema,
+      validate,
     }),
   ],
   providers: [ImageUploadService],

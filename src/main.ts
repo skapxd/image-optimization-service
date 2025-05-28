@@ -1,3 +1,5 @@
+import 'source-map-support/register';
+
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -7,7 +9,9 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('Image Optimization API')
-    .setDescription('A powerful API for image optimization, format conversion, thumbnail generation, and watermarking')
+    .setDescription(
+      'A powerful API for image optimization, format conversion, thumbnail generation, and watermarking',
+    )
     .setVersion('1.0')
     .addTag('image-optimization', 'Basic image optimization operations')
     .addTag('advanced-image', 'Advanced image processing features')
