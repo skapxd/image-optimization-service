@@ -33,6 +33,7 @@ import { ConfigService } from '@nestjs/config';
 import { OptimizationCallback } from 'src/notify-callbacks/notify-callbacks.service';
 import { ClientContextService } from 'src/client-context/client-context.service';
 import { getNewFilePath } from 'src/utils/get-new-file-path';
+import { CallbacksJsonPipe } from '../pipes/callbacks-json.pipe';
 
 @ApiTags('image-optimization')
 @Controller('image-optimization')
@@ -152,7 +153,8 @@ export class ImageOptimizationController {
   @UseInterceptors(FileInterceptor('image'))
   optimizeImage(
     @UploadedFile() file: Express.Multer.File,
-    @Body('callbacks') callbacks: OptimizationCallback[] = [],
+    @Body('callbacks', CallbacksJsonPipe)
+    callbacks: OptimizationCallback[] = [],
     @Query('width', new DefaultValuePipe(800), ParseIntPipe) width: number,
     @Query('height', new DefaultValuePipe(null)) height: number | null,
     @Query('quality', new DefaultValuePipe(80), ParseIntPipe) quality: number,
@@ -685,5 +687,10 @@ export class ImageOptimizationController {
 
     // Enviar el archivo
     res.sendFile(filePath);
+  }
+
+  @Post('test')
+  test(@Body() body: any) {
+    return 'test';
   }
 }

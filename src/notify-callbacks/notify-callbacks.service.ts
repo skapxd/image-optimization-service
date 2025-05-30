@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from 'aws-sdk';
 
 export interface OptimizationCallback {
   url: string;
@@ -8,7 +9,7 @@ export interface OptimizationCallback {
 
 @Injectable()
 export class NotifyCallbackService {
-  constructor() {}
+  private readonly logger = new Logger(NotifyCallbackService.name);
 
   async notify(callbacks: OptimizationCallback[], data: any) {
     try {
@@ -17,7 +18,11 @@ export class NotifyCallbackService {
         try {
           const { url, headers = {}, method = 'POST' } = callback;
 
-          if (!URL.canParse(url)) return;
+          if (!URL.canParse(url)) {
+            this.logger.error(`Invalid URL: ${url}`);
+
+            return;
+          }
 
           const response = await fetch(url, {
             method,

@@ -1,14 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { S3 } from 'aws-sdk';
 import { ConfigService } from '@nestjs/config';
 import { ConfigSchema } from './validation-schema';
+import { ClientContextService } from 'src/client-context/client-context.service';
 
 @Injectable()
 export class ImageUploadService {
   private s3: S3;
   private readonly bucketName: string;
 
-  constructor(private readonly configService: ConfigService<ConfigSchema>) {
+  private readonly logger = new Logger(ImageUploadService.name); // Logger servic
+
+  constructor(
+    private readonly clientContext: ClientContextService,
+    private readonly configService: ConfigService<ConfigSchema>,
+  ) {
     this.bucketName = this.configService.get('S3_BUCKET_NAME')!;
 
     this.s3 = new S3({
@@ -19,12 +25,25 @@ export class ImageUploadService {
     });
   }
 
-  uploadFile(fileBuffer: Buffer, fileName: string, mimetype: string) {
-    this.s3
+  async uploadFile(
+    fileBuffer: Buffer,
+    optimizationId: string,
+    mimetype: string,
+  ) {
+    const context =
+      this.clientContext.getControllerParamsContext(optimizationId);
+
+    if (!context) {
+      this.logger.error(`Context not found id: ${optimizationId}`);
+
+      return;
+    }
+
+    await this.s3
       .upload({
         Bucket: this.bucketName,
         Body: fileBuffer,
-        Key: fileName,
+        Key: context.newFilePath,
         ContentType: mimetype,
         ACL: 'public-read',
       })

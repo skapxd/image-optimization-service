@@ -13,6 +13,7 @@ import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { MulterModule } from '@nestjs/platform-express';
+import { NotifyCallbackModule } from 'src/notify-callbacks/notify-callbacks.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { MulterModule } from '@nestjs/platform-express';
         fileSize: 50 * 1024 * 1024, // 50MB
       },
     }),
+    NotifyCallbackModule,
     ImageUploadModule,
   ],
   controllers: [

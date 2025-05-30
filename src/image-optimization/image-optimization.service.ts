@@ -1,8 +1,10 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import sharp from 'sharp';
 import { ImageFormat } from './image-format.enum';
 import { ImageUploadService } from '../image-upload/image-upload.service';
 import { ClientContextService } from 'src/client-context/client-context.service';
+import { NotifyCallbackService } from '../notify-callbacks/notify-callbacks.service';
+import { ConfigService } from 'aws-sdk';
 
 export interface OptimizationOptions {
   width?: number;
@@ -13,9 +15,13 @@ export interface OptimizationOptions {
 
 @Injectable()
 export class ImageOptimizationService {
+  private readonly logger = new Logger(ImageOptimizationService.name);
+
   constructor(
     private readonly imageUploadService: ImageUploadService,
     private readonly clientContext: ClientContextService,
+    private readonly notifyCallbackService: NotifyCallbackService,
+    // private readonly configService: ConfigService,
   ) {}
 
   async optimizeImage(
@@ -73,8 +79,37 @@ export class ImageOptimizationService {
       const buffer = await pipeline.toBuffer();
       const mimetype = `image/${options.format || 'jpeg'}`;
 
-      this.imageUploadService.uploadFile(buffer, context.newFilePath, mimetype);
-    } catch (error) {
+      const urlBase = ''; // this.configService.get<string>('S3_CUSTOM_DOMAIN') ?? '';
+
+      this.imageUploadService
+        .uploadFile(buffer, optimizationId, mimetype)
+        .then(() => {
+          const { callbacks, newFilePath } = context;
+
+          if (callbacks && callbacks.length > 0) {
+            this.notifyCallbackService
+              .notify(callbacks, {
+                optimizationId,
+                status: 'completed',
+                message: 'Image optimized and uploaded successfully',
+
+                downloadUrl: [
+                  {
+                    originalFile: '',
+                    downloadUrl: new URL(newFilePath, urlBase),
+                  },
+                ],
+                callbacksScheduled: callbacks?.length || 0,
+              })
+              .catch((err) => {
+                this.logger.error(`Failed to notify callbacks: ${err.message}`);
+              });
+          }
+        })
+        .catch((err) => {
+          this.logger.error(`Failed to upload optimized image: ${err}`);
+        });
+    } catch (error) {   
       throw new BadRequestException(
         `Failed to optimize image: ${error.message}`,
       );

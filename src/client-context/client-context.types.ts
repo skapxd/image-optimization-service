@@ -3,6 +3,8 @@
  * Este archivo define los tipos utilizados en el módulo de contexto del cliente
  */
 
+import { OptimizationCallback } from "src/notify-callbacks/notify-callbacks.service";
+
 /**
  * Interfaz base para todos los contextos de cliente
  * Cada contexto específico debe extender esta interfaz
@@ -60,7 +62,7 @@ export interface ControllerParamsContext extends BaseClientContext {
   // Parámetros comunes de controladores
   file: Express.Multer.File;
   files: Express.Multer.File[];
-  callbacks: any[];
+  callbacks: OptimizationCallback[];
   width: number;
   height: number | null;
   quality: number;
