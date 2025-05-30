@@ -13,7 +13,6 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   Body,
-  Inject,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { existsSync } from 'node:fs';
@@ -30,31 +29,29 @@ import {
 import { ImageOptimizationService } from '../image-optimization.service';
 import { ImageFormat } from '../image-format.enum';
 import { randomUUID } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
-import { ImageOptimizationSseController } from './image-optimization-sse.controller';
 import { ConfigService } from '@nestjs/config';
-import { ConfigSchema } from 'src/image-upload/validation-schema';
 import { OptimizationCallback } from 'src/notify-callbacks/notify-callbacks.service';
-import { TimeToLiveDBService } from 'src/time-to-live-db/time-to-live-db.service';
+import { ClientContextService } from 'src/client-context/client-context.service';
+import { getNewFilePath } from 'src/utils/get-new-file-path';
 
 @ApiTags('image-optimization')
 @Controller('image-optimization')
 export class ImageOptimizationController {
   constructor(
     private readonly imageOptimizationService: ImageOptimizationService,
-    @Inject(ImageOptimizationSseController)
-    private readonly sseController: ImageOptimizationSseController,
-    private readonly configService: ConfigService<ConfigSchema>,
-    private readonly ttlDB: TimeToLiveDBService,
+    private readonly configService: ConfigService,
+    private readonly clientContext: ClientContextService,
   ) {}
 
   @Post('optimize')
   @ApiOperation({
     summary: 'Optimize a single image with specified dimensions and quality',
+    description:
+      'Upload a single image for optimization. Returns optimized image data and download URL.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Image file to optimize',
+    description: 'Image file to optimize and callback URLs',
     schema: {
       type: 'object',
       properties: {
@@ -125,6 +122,7 @@ export class ImageOptimizationController {
       type: 'object',
       properties: {
         message: { type: 'string' },
+        originalName: { type: 'string' },
         originalSize: { type: 'number' },
         optimizedSize: { type: 'number' },
         compressionRatio: { type: 'number' },
@@ -164,6 +162,15 @@ export class ImageOptimizationController {
       throw new BadRequestException('No image file provided');
     }
 
+    // Validar parámetros
+    if (width < 1 || width > 8000) {
+      throw new BadRequestException('Width must be between 1 and 8000 pixels');
+    }
+
+    if (height !== null && (height < 1 || height > 8000)) {
+      throw new BadRequestException('Height must be between 1 and 8000 pixels');
+    }
+
     if (quality < 1 || quality > 100) {
       throw new BadRequestException('Quality must be between 1 and 100');
     }
@@ -176,14 +183,25 @@ export class ImageOptimizationController {
       );
     }
 
-    const newFilePath = `optimized/${Date.now()}_${randomUUID()}.${format}`;
+    const newFilePath = getNewFilePath(format);
     const optimizationId = randomUUID();
 
+    // Almacenar los parámetros del controlador en el contexto del cliente
+    this.clientContext.setControllerParamsContext(optimizationId, {
+      file,
+      callbacks,
+      width,
+      height,
+      quality,
+      format,
+      newFilePath,
+    });
+
+    // Iniciar el proceso de optimización
     this.imageOptimizationService
-      .optimizeImage(file.path, {
+      .optimizeImage(file.path, optimizationId, {
         width,
         ...(height !== null && { height }),
-        newFilePath,
         quality,
         format: format.toLowerCase() as ImageFormat,
       })
@@ -191,68 +209,59 @@ export class ImageOptimizationController {
         console.error('Error optimizing image:', error);
       });
 
+    const urlBase = this.configService.get<string>('S3_CUSTOM_DOMAIN');
+
     return {
       message: 'Image optimization started',
       originalSize: file.size,
       data: newFilePath,
-      downloadUrl: new URL(
-        newFilePath,
-        this.configService.get('S3_CUSTOM_DOMAIN'),
-      ),
+      downloadUrl: new URL(newFilePath, urlBase),
       callbacksScheduled: callbacks?.length || 0,
       optimizationId, // Devolver el ID para que el cliente pueda suscribirse a los eventos
     };
   }
 
   @Post('batch-optimize')
-  @ApiOperation({ summary: 'Optimize multiple images at once' })
+  @ApiOperation({
+    summary: 'Optimize multiple images in batch',
+    description:
+      'Upload multiple images for optimization. Returns optimization status and download URLs.',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Multiple image files to optimize',
+    description: 'Image files to optimize and callback URLs',
     schema: {
       type: 'object',
       properties: {
-        images: {
+        files: {
           type: 'array',
           items: {
             type: 'string',
             format: 'binary',
           },
-          description: 'Array of image files to optimize',
+          description: 'Image files to optimize (JPEG, PNG, WebP, TIFF, GIF)',
         },
         callbacks: {
           type: 'array',
           items: {
             type: 'object',
             properties: {
-              url: {
-                type: 'string',
-                description: 'URL to notify when optimization is complete',
-              },
-              headers: {
-                type: 'object',
-                description: 'Optional headers for the callback request',
-              },
-              method: {
-                type: 'string',
-                enum: ['GET', 'POST', 'PUT', 'PATCH'],
-                default: 'POST',
-                description: 'HTTP method for the callback request',
-              },
+              url: { type: 'string' },
+              method: { type: 'string', enum: ['GET', 'POST'] },
+              headers: { type: 'object' },
             },
-            required: ['url'],
           },
-          description: 'Callbacks to notify when optimization is complete',
+          description:
+            'Optional callback URLs to notify when optimization is complete',
         },
       },
-      required: ['images'],
+      required: ['files'],
     },
   })
   @ApiQuery({
     name: 'width',
     required: false,
-    description:
-      'Target width in pixels (optimized for high DPI mobile devices)',
+    description: 'Target width in pixels',
     example: 800,
   })
   @ApiQuery({
@@ -265,61 +274,22 @@ export class ImageOptimizationController {
   @ApiQuery({
     name: 'quality',
     required: false,
-    description: 'Quality level (1-100)',
+    description: 'JPEG/WebP quality (1-100)',
     example: 80,
   })
   @ApiQuery({
     name: 'format',
     required: false,
-    description: 'Output format',
-    enum: ImageFormat,
-    example: ImageFormat.JPEG,
+    description: 'Output format (jpeg, png, webp, avif)',
+    example: 'jpeg',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Images optimization started',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        count: { type: 'number' },
-        callbacksScheduled: { type: 'number' },
-        optimizationId: {
-          type: 'string',
-          description: 'ID for subscribing to SSE notifications',
-        },
-        results: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              originalName: { type: 'string' },
-              originalSize: { type: 'number' },
-              data: {
-                type: 'string',
-                description:
-                  'Processing status or filename of the optimized image',
-              },
-              expectedFilename: {
-                type: 'string',
-                description: 'Expected filename of the optimized image',
-              },
-              downloadUrl: {
-                type: 'string',
-                description:
-                  'URL to download the optimized image once processing is complete',
-              },
-            },
-          },
-        },
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB
       },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - invalid files or parameters',
-  })
-  @UseInterceptors(FilesInterceptor('images'))
+    }),
+  )
   batchOptimizeImages(
     @UploadedFiles() files: Express.Multer.File[],
     @Body('callbacks') callbacks: OptimizationCallback[] = [],
@@ -328,6 +298,44 @@ export class ImageOptimizationController {
     @Query('quality', new DefaultValuePipe(80), ParseIntPipe) quality: number,
     @Query('format', new DefaultValuePipe('jpeg')) format: string,
   ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No image files provided');
+    }
+
+    // Validar parámetros
+    if (width < 1 || width > 8000) {
+      throw new BadRequestException('Width must be between 1 and 8000 pixels');
+    }
+
+    if (height !== null && (height < 1 || height > 8000)) {
+      throw new BadRequestException('Height must be between 1 and 8000 pixels');
+    }
+
+    if (quality < 1 || quality > 100) {
+      throw new BadRequestException('Quality must be between 1 and 100');
+    }
+
+    if (
+      !['jpeg', 'jpg', 'png', 'webp', 'avif'].includes(format.toLowerCase())
+    ) {
+      throw new BadRequestException(
+        'Format must be one of: jpeg, jpg, png, webp, avif',
+      );
+    }
+
+    // Generar un ID único para esta optimización por lotes
+    const optimizationId = randomUUID();
+
+    // Almacenar los parámetros del controlador en el contexto del cliente
+    this.clientContext.setControllerParamsContext(optimizationId, {
+      files,
+      callbacks,
+      width,
+      height,
+      quality,
+      format,
+    });
+
     //   if (!files || files.length === 0) {
     //     throw new BadRequestException('No image files provided');
     //   }

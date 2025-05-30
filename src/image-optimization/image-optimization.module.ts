@@ -46,8 +46,6 @@ import { MulterModule } from '@nestjs/platform-express';
     JobService,
     ImageOptimizationProcessor,
     ImageOptimizationSseController,
-    JobService,
-    QueueService,
   ],
   exports: [ImageOptimizationService, ImageOptimizationSseController],
 })

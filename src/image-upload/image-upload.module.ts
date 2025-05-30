@@ -6,7 +6,6 @@ import { ImageUploadService } from './image-upload.service';
 @Module({
   imports: [
     ConfigModule.forRoot({
-      envFilePath: '.env',
       validate,
     }),
   ],

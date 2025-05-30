@@ -5,14 +5,16 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ImageOptimizationModule } from './image-optimization/image-optimization.module';
 import { TimeToLiveDBModule } from './time-to-live-db/time-to-live-db.module';
+import { ClientContextModule } from './client-context/client-context.module';
 import Joi from 'joi';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
       validationSchema: Joi.object({
+        S3_CUSTOM_DOMAIN: Joi.string().required(),
+
         // Redis Configuration
         REDIS_HOST: Joi.string().default('redis-dev'),
         REDIS_PORT: Joi.number().default(6379),
@@ -34,6 +36,7 @@ import Joi from 'joi';
         DEFAULT_QUALITY: Joi.number().min(1).max(100).default(80),
         DEFAULT_TTL: Joi.number().default(3600), // 1 hour
         MAX_TTL: Joi.number().default(86400), // 24 hours
+        CLIENT_CONTEXT_TTL: Joi.number().default(3600), // 1 hour
 
         // Queue Configuration
         QUEUE_CONCURRENCY: Joi.number().default(4),
@@ -69,6 +72,7 @@ import Joi from 'joi';
     }),
     ImageOptimizationModule,
     TimeToLiveDBModule,
+    ClientContextModule,
   ],
 })
 export class AppModule {}
