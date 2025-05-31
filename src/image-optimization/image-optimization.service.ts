@@ -5,6 +5,8 @@ import { ImageUploadService } from '../image-upload/image-upload.service';
 import { ClientContextService } from 'src/client-context/client-context.service';
 import { NotifyCallbackService } from '../notify-callbacks/notify-callbacks.service';
 import { ConfigService } from '@nestjs/config';
+import { WorkerPoolService } from './services/worker-pool.service';
+import { OptimizationTask } from './workers/image-optimization.worker';
 
 export interface OptimizationOptions {
   width?: number;
@@ -22,93 +24,64 @@ export class ImageOptimizationService {
     private readonly clientContext: ClientContextService,
     private readonly notifyCallbackService: NotifyCallbackService,
     private readonly configService: ConfigService,
+    private readonly workerPoolService: WorkerPoolService,
   ) {}
 
   async optimizeImage(
-    imagePath: string,
-    optimizationId: string,
+    file: Express.Multer.File,
     options: OptimizationOptions,
-  ) {
+    optimizationId: string,
+  ): Promise<{ originalSize: number; optimizedSize: number }> {
     try {
-      const context =
+      const controllerParams =
         this.clientContext.getControllerParamsContext(optimizationId);
 
-      if (!context) {
-        throw new Error(`Context not found, id: ${optimizationId}`);
+      if (!controllerParams) {
+        throw new BadRequestException('Controller parameters not found');
       }
 
-      const imageBuffer = await sharp(imagePath).toBuffer();
+      const { newFilePath } = controllerParams;
 
-      let pipeline = sharp(imageBuffer);
+      // Read image file
+      const imageBuffer = await sharp(file.path).toBuffer();
 
-      // Resize if dimensions are provided
-      if (options.width || options.height) {
-        pipeline = pipeline.resize(options.width, options.height, {
-          fit: 'inside',
-          withoutEnlargement: true,
-        });
+      // Create optimization task for worker
+      const task: OptimizationTask = {
+        imageBuffer,
+        options: {
+          width: options.width,
+          height: options.height,
+          quality: options.quality,
+          format: options.format,
+        },
+        originalName: file.originalname,
+      };
+
+      // Process image using worker pool
+      const result = await this.workerPoolService.optimizeImage(task);
+
+      if (!result.success) {
+        throw new BadRequestException(
+          `Worker optimization failed: ${result.error}`,
+        );
       }
 
-      // Apply format and quality
-      switch (options.format) {
-        case ImageFormat.JPEG:
-          pipeline = pipeline.jpeg({ quality: options.quality || 80 });
-          break;
-        case ImageFormat.PNG:
-          pipeline = pipeline.png({
-            quality: options.quality || 80,
-            compressionLevel: 9,
-          });
-          break;
-        case ImageFormat.WEBP:
-          pipeline = pipeline.webp({ quality: options.quality || 80 });
-          break;
-        case ImageFormat.AVIF:
-          pipeline = pipeline.avif({ quality: options.quality || 80 });
-          break;
-        case ImageFormat.GIF:
-          pipeline = pipeline.gif();
-          break;
-        case ImageFormat.TIFF:
-          pipeline = pipeline.tiff({ quality: options.quality || 80 });
-          break;
-        default:
-          pipeline = pipeline.jpeg({ quality: options.quality || 80 });
-      }
-
-      const buffer = await pipeline.toBuffer();
+      // Upload optimized image
       const mimetype = `image/${options.format || 'jpeg'}`;
+      await this.imageUploadService.uploadFile(
+        result.optimizedBuffer,
+        optimizationId,
+        mimetype,
+      );
 
-      const urlBase = this.configService.get<string>('S3_CUSTOM_DOMAIN');
+      this.logger.log(
+        `Image optimized successfully: ${file.originalname} -> ${newFilePath}`,
+      );
 
-      this.imageUploadService
-        .uploadFile(buffer, optimizationId, mimetype)
-        .then(() => {
-          const { callbacks, newFilePath } = context;
-
-          if (callbacks && callbacks.length > 0) {
-            this.notifyCallbackService
-              .notify(callbacks, {
-                optimizationId,
-                status: 'completed',
-                message: 'Image optimized and uploaded successfully',
-
-                downloadUrl: [
-                  {
-                    originalName: context.file.originalname,
-                    downloadUrl: new URL(newFilePath, urlBase),
-                  },
-                ],
-                callbacksScheduled: callbacks?.length || 0,
-              })
-              .catch((err) => {
-                this.logger.error(`Failed to notify callbacks: ${err.message}`);
-              });
-          }
-        })
-        .catch((err) => {
-          this.logger.error(`Failed to upload optimized image: ${err}`);
-        });
+      return {
+        originalSize: result.originalSize,
+        optimizedSize: result.optimizedSize,
+      };
     } catch (error) {
       throw new BadRequestException(
         `Failed to optimize image: ${error.message}`,
@@ -316,105 +289,105 @@ export class ImageOptimizationService {
     options: OptimizationOptions,
   ): Promise<void> {
     try {
-      const controllerParams = 
+      const controllerParams =
         this.clientContext.getControllerParamsContext(optimizationId);
-      
+
       if (!controllerParams) {
         throw new BadRequestException('Controller parameters not found');
       }
 
       const { callbacks, newFilePaths } = controllerParams;
 
-      const processPromises = files.map(async (file, index) => {
-        try {
-          const newFilePath = newFilePaths[index];
-          
-          // Read image file
+      // Prepare optimization tasks for all files
+      const tasks: OptimizationTask[] = await Promise.all(
+        files.map(async (file, index) => {
           const imageBuffer = await sharp(file.path).toBuffer();
-          const originalSize = imageBuffer.length;
-
-          // Process image with sharp
-          let pipeline = sharp(imageBuffer);
-
-          // Apply resize if width or height is specified
-          if (options.width || options.height) {
-            pipeline = pipeline.resize(options.width, options.height, {
-              fit: 'inside',
-              withoutEnlargement: true,
-            });
-          }
-
-          // Apply format and quality
-          switch (options.format) {
-            case ImageFormat.JPEG:
-              pipeline = pipeline.jpeg({ quality: options.quality });
-              break;
-            case ImageFormat.PNG:
-              pipeline = pipeline.png({ quality: options.quality });
-              break;
-            case ImageFormat.WEBP:
-              pipeline = pipeline.webp({ quality: options.quality });
-              break;
-            case ImageFormat.AVIF:
-              pipeline = pipeline.avif({ quality: options.quality });
-              break;
-            default:
-              pipeline = pipeline.jpeg({ quality: options.quality });
-          }
-
-          const optimizedBuffer = await pipeline.toBuffer();
-
-          // Store newFilePath in context for this specific file
-          this.clientContext.setControllerParamsContext(`${optimizationId}_${index}`, {
-            ...controllerParams,
-            newFilePath,
-          });
-
-          // Upload optimized image
-          const mimetype = `image/${options.format || 'jpeg'}`;
-          await this.imageUploadService.uploadFile(
-            optimizedBuffer,
-            `${optimizationId}_${index}`,
-            mimetype,
-          );
-
-          this.logger.log(
-            `Batch image ${index + 1}/${files.length} optimized successfully: ${file.originalname} -> ${newFilePath}`,
-          );
-
           return {
+            imageBuffer,
+            options: {
+              width: options.width,
+              height: options.height,
+              quality: options.quality,
+              format: options.format,
+            },
             originalName: file.originalname,
-            originalSize,
-            optimizedSize: optimizedBuffer.length,
-            newFilePath,
-            success: true,
           };
-        } catch (error) {
-          this.logger.error(
-            `Failed to optimize batch image ${file.originalname}: ${error.message}`,
-          );
-          return {
-            originalName: file.originalname,
-            error: error.message,
-            success: false,
-          };
-        }
-      });
+        }),
+      );
 
-      // Wait for all images to be processed
-      const results = await Promise.all(processPromises);
+      // Process all images using worker pool
+      const workerResults = await this.workerPoolService.optimizeImages(tasks);
+
+      // Process upload and callback results
+      const results = await Promise.all(
+        workerResults.map(async (workerResult, index) => {
+          try {
+            const newFilePath = newFilePaths[index];
+            const file = files[index];
+
+            if (!workerResult.success) {
+              this.logger.error(
+                `Failed to optimize batch image ${file.originalname}: ${workerResult.error}`,
+              );
+              return {
+                originalName: file.originalname,
+                error: workerResult.error,
+                success: false,
+              };
+            }
+
+            // Store newFilePath in context for this specific file
+            this.clientContext.setControllerParamsContext(
+              `${optimizationId}_${index}`,
+              {
+                ...controllerParams,
+                newFilePath,
+              },
+            );
+
+            // Upload optimized image
+            const mimetype = `image/${options.format || 'jpeg'}`;
+            await this.imageUploadService.uploadFile(
+              workerResult.optimizedBuffer,
+              `${optimizationId}_${index}`,
+              mimetype,
+            );
+
+            this.logger.log(
+              `Batch image ${index + 1}/${files.length} optimized successfully: ${file.originalname} -> ${newFilePath}`,
+            );
+
+            return {
+              originalName: file.originalname,
+              originalSize: workerResult.originalSize,
+              optimizedSize: workerResult.optimizedSize,
+              newFilePath,
+              success: true,
+            };
+          } catch (error) {
+            this.logger.error(
+              `Failed to upload batch image ${files[index].originalname}: ${error.message}`,
+            );
+            return {
+              originalName: files[index].originalname,
+              error: error.message,
+              success: false,
+            };
+          }
+        }),
+      );
 
       // Notify callbacks if provided
-        if (callbacks && callbacks.length > 0) {
-          this.notifyCallbackService
-            .notify(callbacks, {
-              optimizationId,
-              type: 'batch',
-              results,
-              totalFiles: files.length,
-              successfulFiles: results.filter(r => r.success).length,
-              failedFiles: results.filter(r => !r.success).length,
-            })
+      if (callbacks && callbacks.length > 0) {
+        this.notifyCallbackService
+          .notify(callbacks, {
+            optimizationId,
+            type: 'batch',
+            results,
+            totalFiles: files.length,
+            successfulFiles: results.filter((r) => r.success).length,
+            failedFiles: results.filter((r) => !r.success).length,
+          })
           .catch((err) => {
             this.logger.error(`Failed to notify callbacks: ${err.message}`);
           });

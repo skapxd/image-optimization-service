@@ -14,9 +14,15 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3000
-      - UV_THREADPOOL_SIZE=16
-      - SHARP_CACHE_MEMORY=2048
-      - SHARP_CONCURRENCY=4
+      # Optimized for Piscina and image processing
+      - UV_THREADPOOL_SIZE=24
+      - SHARP_CACHE_MEMORY=3072
+      - SHARP_CONCURRENCY=0  # Let Piscina handle concurrency
+      # Piscina configuration
+      - PISCINA_THREADS=6
+      - PISCINA_IDLE_TIMEOUT=30000
+      # Node.js memory optimization
+      - NODE_OPTIONS=--max-old-space-size=4096
     volumes:
       # Mount source code for hot reload
       - ./src:/app/src:ro
@@ -37,11 +43,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
-          cpus: '2.0'
+          memory: 6G
+          cpus: '3.0'
         reservations:
-          memory: 2G
-          cpus: '1.0'
+          memory: 3G
+          cpus: '1.5'
 
   # Database and cache services for development
   redis-dev:

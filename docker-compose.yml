@@ -13,9 +13,18 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - UV_THREADPOOL_SIZE=16
-      - SHARP_CACHE_MEMORY=2048
-      - SHARP_CONCURRENCY=4
+
+      # Optimized for Piscina and image processing
+      - UV_THREADPOOL_SIZE=32
+      - SHARP_CACHE_MEMORY=4096
+      - SHARP_CONCURRENCY=0  # Let Piscina handle concurrency
+
+      # Piscina configuration
+      - PISCINA_THREADS=8
+      - PISCINA_IDLE_TIMEOUT=60000
+
+      # Node.js memory optimization
+      - NODE_OPTIONS="--max-old-space-size=6144"
     volumes:
       # Mount uploads directory for persistent file storage
       # - ./uploads:/app/uploads
@@ -33,11 +42,11 @@ services:
     deploy:
       resources:
         limits:
+          memory: 8G
+          cpus: '4.0'
+        reservations:
           memory: 4G
           cpus: '2.0'
-        reservations:
-          memory: 2G
-          cpus: '1.0'
 
   # Optional: Nginx reverse proxy for production
   nginx:

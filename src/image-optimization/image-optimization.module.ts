@@ -6,6 +6,7 @@ import { BullModule } from '@nestjs/bull';
 import { ImageOptimizationProcessor } from './processors/image-optimization.processor';
 import { JobService } from './services/job.service';
 import { QueueService } from './services/queue.service';
+import { WorkerPoolService } from './services/worker-pool.service';
 import { AdvancedImageController } from './controllers/advanced-image.controller';
 import { QueueController } from './controllers/queue.controller';
 import { ImageUploadModule } from 'src/image-upload/image-upload.module';
@@ -46,6 +47,7 @@ import { NotifyCallbackModule } from 'src/notify-callbacks/notify-callbacks.modu
     ImageOptimizationService,
     QueueService,
     JobService,
+    WorkerPoolService,
     ImageOptimizationProcessor,
     ImageOptimizationSseController,
   ],

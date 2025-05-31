@@ -202,12 +202,16 @@ export class ImageOptimizationController {
 
     // Iniciar el proceso de optimización
     this.imageOptimizationService
-      .optimizeImage(file.path, optimizationId, {
-        width,
-        ...(height !== null && { height }),
-        quality,
-        format: format.toLowerCase() as ImageFormat,
-      })
+      .optimizeImage(
+        file,
+        {
+          width,
+          ...(height !== null && { height }),
+          quality,
+          format: format.toLowerCase() as ImageFormat,
+        },
+        optimizationId,
+      )
       .catch((error) => {
         console.error('Error optimizing image:', error);
       });
