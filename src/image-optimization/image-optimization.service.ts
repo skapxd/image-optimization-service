@@ -4,7 +4,7 @@ import { ImageFormat } from './image-format.enum';
 import { ImageUploadService } from '../image-upload/image-upload.service';
 import { ClientContextService } from 'src/client-context/client-context.service';
 import { NotifyCallbackService } from '../notify-callbacks/notify-callbacks.service';
-import { ConfigService } from 'aws-sdk';
+import { ConfigService } from '@nestjs/config';
 
 export interface OptimizationOptions {
   width?: number;
@@ -21,7 +21,7 @@ export class ImageOptimizationService {
     private readonly imageUploadService: ImageUploadService,
     private readonly clientContext: ClientContextService,
     private readonly notifyCallbackService: NotifyCallbackService,
-    // private readonly configService: ConfigService,
+    private readonly configService: ConfigService,
   ) {}
 
   async optimizeImage(
@@ -79,7 +79,7 @@ export class ImageOptimizationService {
       const buffer = await pipeline.toBuffer();
       const mimetype = `image/${options.format || 'jpeg'}`;
 
-      const urlBase = ''; // this.configService.get<string>('S3_CUSTOM_DOMAIN') ?? '';
+      const urlBase = this.configService.get<string>('S3_CUSTOM_DOMAIN');
 
       this.imageUploadService
         .uploadFile(buffer, optimizationId, mimetype)
@@ -95,7 +95,7 @@ export class ImageOptimizationService {
 
                 downloadUrl: [
                   {
-                    originalFile: '',
+                    originalName: context.file.originalname,
                     downloadUrl: new URL(newFilePath, urlBase),
                   },
                 ],
@@ -109,7 +109,7 @@ export class ImageOptimizationService {
         .catch((err) => {
           this.logger.error(`Failed to upload optimized image: ${err}`);
         });
-    } catch (error) {   
+    } catch (error) {
       throw new BadRequestException(
         `Failed to optimize image: ${error.message}`,
       );

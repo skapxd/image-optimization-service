@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from 'aws-sdk';
 
 export interface OptimizationCallback {
   url: string;

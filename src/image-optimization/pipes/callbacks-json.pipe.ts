@@ -12,8 +12,13 @@ export class CallbacksJsonPipe
     try {
       // Si el valor no empieza con '[' y termina con ']', asumimos que es una concatenación de objetos JSON
       let jsonString = value.trim();
-      if (!jsonString.startsWith('[') || !jsonString.endsWith(']')) {
-        // Dividir por '},{' para separar los objetos y reconstruir un array JSON válido
+
+      // If the value is not an array, try to parse it as a single JSON object
+      // and wrap it in an array.
+      if (!jsonString.startsWith('[') && jsonString.startsWith('{')) {
+        jsonString = `[${jsonString}]`;
+      } else if (!jsonString.startsWith('[') || !jsonString.endsWith(']')) {
+        // If it's not a single object or an array, try to reconstruct from concatenated objects
         const parts = jsonString.split('},{');
         jsonString =
           '[' +

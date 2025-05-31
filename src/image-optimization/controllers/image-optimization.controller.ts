@@ -13,6 +13,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   Body,
+  Headers,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { existsSync } from 'node:fs';
@@ -690,7 +691,7 @@ export class ImageOptimizationController {
   }
 
   @Post('test')
-  test(@Body() body: any) {
+  test(@Body() body: any, @Headers() headers: Record<string, string>): string {
     return 'test';
   }
 }
