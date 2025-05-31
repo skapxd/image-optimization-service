@@ -309,4 +309,120 @@ export class ImageOptimizationService {
       );
     }
   }
+
+  async batchOptimizeImages(
+    files: Express.Multer.File[],
+    optimizationId: string,
+    options: OptimizationOptions,
+  ): Promise<void> {
+    try {
+      const controllerParams = 
+        this.clientContext.getControllerParamsContext(optimizationId);
+      
+      if (!controllerParams) {
+        throw new BadRequestException('Controller parameters not found');
+      }
+
+      const { callbacks, newFilePaths } = controllerParams;
+
+      const processPromises = files.map(async (file, index) => {
+        try {
+          const newFilePath = newFilePaths[index];
+          
+          // Read image file
+          const imageBuffer = await sharp(file.path).toBuffer();
+          const originalSize = imageBuffer.length;
+
+          // Process image with sharp
+          let pipeline = sharp(imageBuffer);
+
+          // Apply resize if width or height is specified
+          if (options.width || options.height) {
+            pipeline = pipeline.resize(options.width, options.height, {
+              fit: 'inside',
+              withoutEnlargement: true,
+            });
+          }
+
+          // Apply format and quality
+          switch (options.format) {
+            case ImageFormat.JPEG:
+              pipeline = pipeline.jpeg({ quality: options.quality });
+              break;
+            case ImageFormat.PNG:
+              pipeline = pipeline.png({ quality: options.quality });
+              break;
+            case ImageFormat.WEBP:
+              pipeline = pipeline.webp({ quality: options.quality });
+              break;
+            case ImageFormat.AVIF:
+              pipeline = pipeline.avif({ quality: options.quality });
+              break;
+            default:
+              pipeline = pipeline.jpeg({ quality: options.quality });
+          }
+
+          const optimizedBuffer = await pipeline.toBuffer();
+
+          // Store newFilePath in context for this specific file
+          this.clientContext.setControllerParamsContext(`${optimizationId}_${index}`, {
+            ...controllerParams,
+            newFilePath,
+          });
+
+          // Upload optimized image
+          const mimetype = `image/${options.format || 'jpeg'}`;
+          await this.imageUploadService.uploadFile(
+            optimizedBuffer,
+            `${optimizationId}_${index}`,
+            mimetype,
+          );
+
+          this.logger.log(
+            `Batch image ${index + 1}/${files.length} optimized successfully: ${file.originalname} -> ${newFilePath}`,
+          );
+
+          return {
+            originalName: file.originalname,
+            originalSize,
+            optimizedSize: optimizedBuffer.length,
+            newFilePath,
+            success: true,
+          };
+        } catch (error) {
+          this.logger.error(
+            `Failed to optimize batch image ${file.originalname}: ${error.message}`,
+          );
+          return {
+            originalName: file.originalname,
+            error: error.message,
+            success: false,
+          };
+        }
+      });
+
+      // Wait for all images to be processed
+      const results = await Promise.all(processPromises);
+
+      // Notify callbacks if provided
+        if (callbacks && callbacks.length > 0) {
+          this.notifyCallbackService
+            .notify(callbacks, {
+              optimizationId,
+              type: 'batch',
+              results,
+              totalFiles: files.length,
+              successfulFiles: results.filter(r => r.success).length,
+              failedFiles: results.filter(r => !r.success).length,
+            })
+          .catch((err) => {
+            this.logger.error(`Failed to notify callbacks: ${err.message}`);
+          });
+      }
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to optimize batch images: ${error.message}`,
+      );
+    }
+  }
 }

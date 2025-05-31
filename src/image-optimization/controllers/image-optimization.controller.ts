@@ -228,11 +228,11 @@ export class ImageOptimizationController {
   @ApiOperation({
     summary: 'Optimize multiple images in batch',
     description:
-      'Upload multiple images for optimization. Returns optimization status and download URLs.',
+      'Upload multiple images for optimization. Returns batch optimization status and download URLs for each processed image.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Image files to optimize and callback URLs',
+    description: 'Image files to optimize and optional callback URLs',
     schema: {
       type: 'object',
       properties: {
@@ -243,19 +243,33 @@ export class ImageOptimizationController {
             format: 'binary',
           },
           description: 'Image files to optimize (JPEG, PNG, WebP, TIFF, GIF)',
+          maxItems: 10,
         },
         callbacks: {
           type: 'array',
           items: {
             type: 'object',
             properties: {
-              url: { type: 'string' },
-              method: { type: 'string', enum: ['GET', 'POST'] },
-              headers: { type: 'object' },
+              url: {
+                type: 'string',
+                description:
+                  'URL to notify when batch optimization is complete',
+              },
+              headers: {
+                type: 'object',
+                description: 'Optional headers for the callback request',
+              },
+              method: {
+                type: 'string',
+                enum: ['GET', 'POST', 'PUT', 'PATCH'],
+                default: 'POST',
+                description: 'HTTP method for the callback request',
+              },
             },
+            required: ['url'],
           },
           description:
-            'Optional callback URLs to notify when optimization is complete',
+            'Callbacks to notify when batch optimization is complete',
         },
       },
       required: ['files'],
@@ -264,8 +278,12 @@ export class ImageOptimizationController {
   @ApiQuery({
     name: 'width',
     required: false,
-    description: 'Target width in pixels',
+    description:
+      'Target width in pixels (optimized for high DPI mobile devices)',
     example: 800,
+    type: 'number',
+    minimum: 1,
+    maximum: 8000,
   })
   @ApiQuery({
     name: 'height',
@@ -273,18 +291,25 @@ export class ImageOptimizationController {
     description:
       'Target height in pixels (leave empty to maintain aspect ratio)',
     example: null,
+    type: 'number',
+    minimum: 1,
+    maximum: 8000,
   })
   @ApiQuery({
     name: 'quality',
     required: false,
-    description: 'JPEG/WebP quality (1-100)',
+    description: 'Quality level for JPEG/WebP formats (1-100)',
     example: 80,
+    type: 'number',
+    minimum: 1,
+    maximum: 100,
   })
   @ApiQuery({
     name: 'format',
     required: false,
-    description: 'Output format (jpeg, png, webp, avif)',
-    example: 'jpeg',
+    description: 'Output format for all optimized images',
+    enum: ImageFormat,
+    example: ImageFormat.JPEG,
   })
   @UseInterceptors(
     FilesInterceptor('files', 10, {
@@ -295,7 +320,8 @@ export class ImageOptimizationController {
   )
   batchOptimizeImages(
     @UploadedFiles() files: Express.Multer.File[],
-    @Body('callbacks') callbacks: OptimizationCallback[] = [],
+    @Body('callbacks', CallbacksJsonPipe)
+    callbacks: OptimizationCallback[] = [],
     @Query('width', new DefaultValuePipe(800), ParseIntPipe) width: number,
     @Query('height', new DefaultValuePipe(null)) height: number | null,
     @Query('quality', new DefaultValuePipe(80), ParseIntPipe) quality: number,
@@ -319,15 +345,15 @@ export class ImageOptimizationController {
     }
 
     if (
-      !['jpeg', 'jpg', 'png', 'webp', 'avif'].includes(format.toLowerCase())
+      !Object.values(ImageFormat).includes(format.toLowerCase() as ImageFormat)
     ) {
       throw new BadRequestException(
-        'Format must be one of: jpeg, jpg, png, webp, avif',
+        `Format must be one of: ${Object.values(ImageFormat).join(', ')}`,
       );
     }
 
-    // Generar un ID único para esta optimización por lotes
     const optimizationId = randomUUID();
+    const newFilePaths = files.map(() => getNewFilePath(format));
 
     // Almacenar los parámetros del controlador en el contexto del cliente
     this.clientContext.setControllerParamsContext(optimizationId, {
@@ -337,146 +363,35 @@ export class ImageOptimizationController {
       height,
       quality,
       format,
+      newFilePaths,
     });
 
-    //   if (!files || files.length === 0) {
-    //     throw new BadRequestException('No image files provided');
-    //   }
-    //   if (quality < 1 || quality > 100) {
-    //     throw new BadRequestException('Quality must be between 1 and 100');
-    //   }
-    //   if (
-    //     !Object.values(ImageFormat).includes(format.toLowerCase() as ImageFormat)
-    //   ) {
-    //     throw new BadRequestException(
-    //       `Format must be one of: ${Object.values(ImageFormat).join(', ')}`,
-    //     );
-    //   }
-    //   const optimizationId = randomUUID();
-    //   // Generar nombres de archivo únicos para cada imagen antes del procesamiento
-    //   const fileNames = files.map(
-    //     (file, index) => `${randomUUID()}_${Date.now()}_${index}.${format}`,
-    //   );
-    //   // Definir el tipo para los resultados
-    //   const results: Array<{
-    //     originalName: string;
-    //     originalSize: number;
-    //     optimizedSize?: number;
-    //     compressionRatio?: number;
-    //     fileName?: string;
-    //     error?: string;
-    //   }> = [];
-    //   // Enviar evento de inicio de optimización por lotes
-    //   this.sseController.sendOptimizationEvent({
-    //     id: optimizationId,
-    //     type: 'progress',
-    //     data: {
-    //       progress: 0,
-    //       message: 'Starting batch optimization',
-    //       totalFiles: files.length,
-    //     },
-    //   });
-    //   // Procesar cada archivo
-    //   const processPromises = files.map(async (file, index) => {
-    //     try {
-    //       const newFileName = fileNames[index];
-    //       // Enviar evento de progreso para este archivo
-    //       this.sseController.sendOptimizationEvent({
-    //         id: optimizationId,
-    //         type: 'progress',
-    //         data: {
-    //           progress: Math.round((index / files.length) * 100),
-    //           message: `Optimizing file ${index + 1} of ${files.length}`,
-    //           fileName: newFileName,
-    //           originalName: file.originalname,
-    //           originalSize: file.size,
-    //         },
-    //       });
-    //       const optimizedImage =
-    //         await this.imageOptimizationService.optimizeImage(file.path, {
-    //           width,
-    //           ...(height !== null && { height }),
-    //           quality,
-    //           format: format.toLowerCase() as ImageFormat,
-    //         });
-    //       await writeFile(`./uploads/optimized/${newFileName}`, optimizedImage);
-    //       const fileResult = {
-    //         originalName: file.originalname,
-    //         originalSize: file.size,
-    //         optimizedSize: optimizedImage.length,
-    //         compressionRatio: Math.round(
-    //           ((file.size - optimizedImage.length) / file.size) * 100,
-    //         ),
-    //         fileName: newFileName,
-    //       };
-    //       results.push(fileResult);
-    //       return fileResult;
-    //     } catch (error) {
-    //       console.error(`Error optimizing image ${file.originalname}:`, error);
-    //       // Enviar evento de error para este archivo específico
-    //       this.sseController.sendOptimizationEvent({
-    //         id: optimizationId,
-    //         type: 'progress',
-    //         data: {
-    //           progress: Math.round((index / files.length) * 100),
-    //           message: `Error optimizing file ${index + 1} of ${files.length}`,
-    //           fileName: file.originalname,
-    //           error: error.message,
-    //         },
-    //       });
-    //       return {
-    //         originalName: file.originalname,
-    //         originalSize: file.size,
-    //         error: error.message,
-    //       };
-    //     }
-    //   });
-    //   // Iniciar el procesamiento en segundo plano
-    //   Promise.all(processPromises)
-    //     .then((processedResults) => {
-    //       // Datos de optimización por lotes
-    //       const batchData = {
-    //         count: processedResults.length,
-    //         results: processedResults,
-    //       };
-    //       // Enviar evento de finalización de optimización por lotes
-    //       this.sseController.sendOptimizationEvent({
-    //         id: optimizationId,
-    //         type: 'complete',
-    //         data: batchData,
-    //       });
-    //       // Notificar a todos los callbacks
-    //       if (callbacks && callbacks.length > 0) {
-    //         this.notifyCallbacks(JSON.parse(callbacks as any), batchData);
-    //       }
-    //     })
-    //     .catch((error) => {
-    //       console.error('Error in batch optimization:', error);
-    //       // Enviar evento de error general
-    //       this.sseController.sendOptimizationEvent({
-    //         id: optimizationId,
-    //         type: 'error',
-    //         data: {
-    //           message: 'Error in batch optimization',
-    //           error: error.message,
-    //         },
-    //       });
-    //     });
-    //   return {
-    //     message: 'Batch image optimization started',
-    //     count: files.length,
-    //     callbacksScheduled: callbacks?.length || 0,
-    //     optimizationId, // Devolver el ID para que el cliente pueda suscribirse a los eventos
-    //     results: files.map((file, index) => {
-    //       return {
-    //         originalName: file.originalname,
-    //         originalSize: file.size,
-    //         data: `Processing...`, // No devolvemos los datos de la imagen, ya que se procesarán de forma asíncrona
-    //         expectedFilename: fileNames[index],
-    //         downloadUrl: `/image-optimization/download/${fileNames[index]}`,
-    //       };
-    //     }),
-    //   };
+    // Iniciar el proceso de optimización en lote
+    this.imageOptimizationService
+      .batchOptimizeImages(files, optimizationId, {
+        width,
+        ...(height !== null && { height }),
+        quality,
+        format: format.toLowerCase() as ImageFormat,
+      })
+      .catch((error) => {
+        console.error('Error optimizing batch images:', error);
+      });
+
+    const urlBase = this.configService.get<string>('S3_CUSTOM_DOMAIN');
+
+    return {
+      message: 'Batch image optimization started',
+      count: files.length,
+      callbacksScheduled: callbacks?.length || 0,
+      optimizationId, // Devolver el ID para que el cliente pueda suscribirse a los eventos
+      results: files.map((file, index) => ({
+        originalName: file.originalname,
+        originalSize: file.size,
+        data: newFilePaths[index],
+        downloadUrl: new URL(newFilePaths[index], urlBase),
+      })),
+    };
   }
 
   @Post('blur-placeholder')
@@ -604,90 +519,6 @@ export class ImageOptimizationController {
       ),
       data: blurPlaceholder.toString('base64'),
     };
-  }
-
-  @Get('download/:filename')
-  @ApiOperation({
-    summary: 'Download an optimized image by filename',
-    description:
-      'Retrieve and download an optimized image file using its filename',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Image file downloaded successfully',
-    content: {
-      'image/jpeg': {
-        schema: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-      'image/png': {
-        schema: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-      'image/webp': {
-        schema: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Image file not found',
-  })
-  downloadOptimizedImage(
-    @Param('filename') filename: string,
-    @Res() res: Response,
-  ) {
-    // Validar que el filename no contenga caracteres peligrosos
-    if (!/^[a-zA-Z0-9_-]+\.[a-zA-Z]{2,4}$/.test(filename)) {
-      throw new BadRequestException('Invalid filename format');
-    }
-
-    // Construir la ruta del archivo
-    const filePath = join(process.cwd(), 'uploads', 'optimized', filename);
-
-    // Verificar que el archivo existe
-    if (!existsSync(filePath)) {
-      throw new NotFoundException('Image file not found');
-    }
-
-    // Determinar el tipo de contenido basado en la extensión
-    const extension = filename.split('.').pop()?.toLowerCase();
-    let contentType = 'application/octet-stream';
-
-    switch (extension) {
-      case 'jpg':
-      case 'jpeg':
-        contentType = 'image/jpeg';
-        break;
-      case 'png':
-        contentType = 'image/png';
-        break;
-      case 'webp':
-        contentType = 'image/webp';
-        break;
-      case 'gif':
-        contentType = 'image/gif';
-        break;
-      case 'tiff':
-      case 'tif':
-        contentType = 'image/tiff';
-        break;
-    }
-
-    // Configurar headers de respuesta
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache por 1 año
-
-    // Enviar el archivo
-    res.sendFile(filePath);
   }
 
   @Post('test')
