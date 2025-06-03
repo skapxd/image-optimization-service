@@ -10,21 +10,21 @@ services:
     container_name: image-optimization-service
     ports:
       - "3003:3000"
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
+    # environment:
+    #   - NODE_ENV=production
+    #   - PORT=3000
 
-      # Optimized for Piscina and image processing
-      - UV_THREADPOOL_SIZE=32
-      - SHARP_CACHE_MEMORY=4096
-      - SHARP_CONCURRENCY=0  # Let Piscina handle concurrency
+    #   # Optimized for Piscina and image processing
+    #   - UV_THREADPOOL_SIZE=32
+    #   - SHARP_CACHE_MEMORY=4096
+    #   - SHARP_CONCURRENCY=0  # Let Piscina handle concurrency
 
-      # Piscina configuration
-      - PISCINA_THREADS=8
-      - PISCINA_IDLE_TIMEOUT=60000
+    #   # Piscina configuration
+    #   - PISCINA_THREADS=8
+    #   - PISCINA_IDLE_TIMEOUT=60000
 
-      # Node.js memory optimization
-      - NODE_OPTIONS="--max-old-space-size=6144"
+    #   # Node.js memory optimization
+    #   - NODE_OPTIONS="--max-old-space-size=6144"
     volumes:
       # Mount uploads directory for persistent file storage
       # - ./uploads:/app/uploads
