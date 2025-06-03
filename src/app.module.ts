@@ -12,6 +12,9 @@ import Joi from 'joi';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validationOptions: {
+        abortEarly: false,
+      },
       validationSchema: Joi.object({
         S3_CUSTOM_DOMAIN: Joi.string().required(),
 
@@ -51,6 +54,7 @@ import Joi from 'joi';
     }),
     BullModule.forRootAsync({
       imports: [ConfigModule],
+      inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         redis: {
           host: configService.get<string>('REDIS_HOST', 'localhost'),
@@ -59,7 +63,6 @@ import Joi from 'joi';
           db: configService.get<number>('REDIS_DB', 0),
         },
       }),
-      inject: [ConfigService],
     }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot({
