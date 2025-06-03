@@ -10,21 +10,39 @@ services:
     container_name: image-optimization-service
     ports:
       - "3003:3000"
-    # environment:
-    #   - NODE_ENV=production
-    #   - PORT=3000
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
 
-    #   # Optimized for Piscina and image processing
-    #   - UV_THREADPOOL_SIZE=32
-    #   - SHARP_CACHE_MEMORY=4096
-    #   - SHARP_CONCURRENCY=0  # Let Piscina handle concurrency
+      # Optimized for Piscina and image processing
+      - UV_THREADPOOL_SIZE=32
+      - SHARP_CACHE_MEMORY=4096
+      - SHARP_CONCURRENCY=0  # Let Piscina handle concurrency
 
-    #   # Piscina configuration
-    #   - PISCINA_THREADS=8
-    #   - PISCINA_IDLE_TIMEOUT=60000
+      # Piscina configuration
+      - PISCINA_THREADS=8
+      - PISCINA_IDLE_TIMEOUT=60000
 
-    #   # Node.js memory optimization
-    #   - NODE_OPTIONS="--max-old-space-size=6144"
+      # Node.js memory optimization
+      - NODE_OPTIONS="--max-old-space-size=6144"
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB}
+      - UPLOAD_PATH=${UPLOAD_PATH}
+      - OPTIMIZED_PATH=${OPTIMIZED_PATH}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE}
+      - DEFAULT_QUALITY=${DEFAULT_QUALITY}
+      - DEFAULT_TTL=${DEFAULT_TTL}
+      - MAX_TTL=${MAX_TTL}
+      - QUEUE_CONCURRENCY=${QUEUE_CONCURRENCY}
+      - CLEANUP_INTERVAL=${CLEANUP_INTERVAL}
+      - MAX_RETRIES=${MAX_RETRIES}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESSKEY=${S3_SECRET_ACCESSKEY}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_CUSTOM_DOMAIN=${S3_CUSTOM_DOMAIN}
     volumes:
       # Mount uploads directory for persistent file storage
       # - ./uploads:/app/uploads
