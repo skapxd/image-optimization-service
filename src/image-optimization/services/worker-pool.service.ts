@@ -16,7 +16,10 @@ export class WorkerPoolService implements OnModuleDestroy {
       // Get configuration from environment variables with sensible defaults
       const maxThreads = parseInt(process.env.PISCINA_THREADS || '4', 10);
       const minThreads = Math.max(1, Math.floor(maxThreads / 2));
-      const idleTimeout = parseInt(process.env.PISCINA_IDLE_TIMEOUT || '5000', 10);
+      const idleTimeout = parseInt(
+        process.env.PISCINA_IDLE_TIMEOUT || '5000',
+        10,
+      );
 
       this.piscina = new Piscina({
         filename: join(__dirname, '../workers/image-optimization.worker.js'),
@@ -25,7 +28,9 @@ export class WorkerPoolService implements OnModuleDestroy {
         idleTimeout,
       });
 
-      this.logger.log(`Worker pool initialized with ${minThreads}-${maxThreads} threads, ${idleTimeout}ms idle timeout`);
+      this.logger.log(
+        `Worker pool initialized with ${minThreads}-${maxThreads} threads, ${idleTimeout}ms idle timeout`,
+      );
     } catch (error) {
       this.logger.error('Failed to initialize worker pool:', error.message);
       throw error;

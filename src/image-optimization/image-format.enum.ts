@@ -5,7 +5,8 @@ export enum ImageFormat {
   AVIF = 'avif',
   GIF = 'gif',
   TIFF = 'tiff',
-  SVG = 'svg'
+  SVG = 'svg',
+  AUTO = 'auto',
 }
 
 export const SUPPORTED_IMAGE_FORMATS = Object.values(ImageFormat);
